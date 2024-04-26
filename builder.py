@@ -9,7 +9,7 @@ from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
 from keras.preprocessing.image import load_img, img_to_array
 import tensorflow as tf
 from sklearn.utils import shuffle
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, PredefinedSplit
 from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 
@@ -24,7 +24,7 @@ class LegoClassifier:
         self.lego_test_dir = lego_test_dir
         self.non_lego_test_dir = non_lego_test_dir
         
-        self.model = Sequential()
+        self.model = None
         self.X_train, y_train = None, None
         self.X_test, y_test = None, None
         
@@ -98,10 +98,10 @@ class LegoClassifier:
     def train_model(self, epochs = 10, batch_size = 32):
         self.model.fit(self.X_train, self.y_train, epochs=epochs, batch_size=batch_size)
 
-    # Think about activation functions, number of layers, number of epochs
+    # Think about activation functions
 
 
-    def create_model(n_layers):
+    def create_model_helper(self, n_layers):
         model = Sequential()
         model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(64, 64, 1)))
         model.add(MaxPooling2D(pool_size=(2, 2)))
@@ -111,19 +111,37 @@ class LegoClassifier:
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid'))
         model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-        return model
+        return model    
     
-    def tune_model(self):
-        self.model = KerasClassifier(build_fn=self.create_model, n_layers = 1, epochs=10, batch_size=32)
+    def create_model(self):
+        def model_fn(n_layers=1):
+            return self.create_model_helper(n_layers)
+        
+        self.model = KerasClassifier(build_fn=model_fn, n_layers = 1, epochs=10, batch_size=32)
         param_grid = {'n_layers': [1, 2, 3, 4, 5]}
+        
+        # Combine the training and testing data
+        X_combined = np.concatenate((self.X_train, self.X_test), axis=0)
+        y_combined = np.concatenate((self.y_train, self.y_test), axis=0)
+
+        # Create a list where the test data indices are marked with -1 and the rest are 0
+        test_fold = [-1 if i < len(self.X_train) else 0 for i in range(len(X_combined))]
+
+        # Use the list to create a PredefinedSplit
+        ps = PredefinedSplit(test_fold)
+        
         # Perform grid search
-        grid = GridSearchCV(estimator=self.model, param_grid=param_grid, cv=3)
-        grid_result = grid.fit(self.X_train, self.y_train)
+        grid = GridSearchCV(estimator=self.model, param_grid=param_grid, cv=ps)
+        grid_result = grid.fit(X_combined, y_combined)
 
         # Set classifier.model to the best model found by GridSearchCV
-        classifier.model = grid.best_estimator_.model
+        self.model = grid.best_estimator_.model
     
         print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+        
+        # Get the best n_layers value and create the model with it
+        best_n_layers = grid_result.best_params_['n_layers']
+        self.model = self.create_model_helper(best_n_layers)
         
         
     def load_pretrained_model(self, model_path):
@@ -158,7 +176,7 @@ if __name__ == "__main__":
     classifier.load_data()
     classifier.preprocess_data()
     
-    classifier.tune_model()
+    classifier.create_model()
     
     classifier.train_model()
     
