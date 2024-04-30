@@ -5,7 +5,7 @@ import cv2
 import os
 import numpy as np
 from keras.models import Sequential, load_model
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
 from keras.preprocessing.image import load_img, img_to_array
 import tensorflow as tf
 from sklearn.utils import shuffle
@@ -13,16 +13,12 @@ from sklearn.model_selection import train_test_split, PredefinedSplit
 from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 
-# TEST_MODE = "SPLIT"
-TEST_MODE = "SEPARATE"
-
 
 class LegoClassifier:
-    def __init__(self, lego_dir, non_lego_dir, lego_test_dir, non_lego_test_dir):
-        self.lego_dir = lego_dir 
+    def __init__(self, lego_model_dir, lego_image_dir, non_lego_dir):
+        self.lego_model_dir = lego_model_dir 
+        self.lego_image_dir = lego_image_dir
         self.non_lego_dir = non_lego_dir
-        self.lego_test_dir = lego_test_dir
-        self.non_lego_test_dir = non_lego_test_dir
         
         self.model = None
         self.X_train, y_train = None, None
@@ -34,56 +30,42 @@ class LegoClassifier:
 
     def load_data(self):
         
-        if TEST_MODE == "SPLIT":
-            # Load Lego images
-            lego_imgs = [img_to_array(load_img(os.path.join(self.lego_dir, img), target_size=(64, 64), color_mode='grayscale')) for img in os.listdir(self.lego_dir)]
-            lego_labels = [1] * len(lego_imgs)
-
-            # Load non-Lego images
-            non_lego_imgs = [img_to_array(load_img(os.path.join(self.non_lego_dir, img), target_size=(64, 64), color_mode='grayscale')) for img in os.listdir(self.non_lego_dir)]
-            non_lego_labels = [0] * len(non_lego_imgs)
-
-            # Combine data and labels
-            X = np.array(lego_imgs + non_lego_imgs)
-            y = np.array(lego_labels + non_lego_labels)
-            
-            # Shuffle data
-            X, y = self.shuffle_data(X, y)
-
-            # Perform train-test split
-            self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            
-        else:
-            # Load Lego images
-            lego_imgs = [img_to_array(load_img(os.path.join(self.lego_dir, img), target_size=(64, 64), 
-                                            color_mode='grayscale')) for img in os.listdir(self.lego_dir)]
-            lego_labels = [1] * len(lego_imgs)
-
-            # Load non-Lego images
-            non_lego_imgs = [img_to_array(load_img(os.path.join(self.non_lego_dir, img), target_size=(64, 64), 
-                                                color_mode='grayscale')) for img in os.listdir(self.non_lego_dir)]
-            non_lego_labels = [0] * len(non_lego_imgs)
-
-            # Combine data and labels and convert to numpy arrays
-            self.X_train = np.array(lego_imgs + non_lego_imgs)
-            self.y_train = np.array(lego_labels + non_lego_labels)
-            
-            # Load Lego test images
-            lego_imgs = [img_to_array(load_img(os.path.join(self.lego_test_dir, img), target_size=(64, 64), 
-                                            color_mode='grayscale')) for img in os.listdir(self.lego_test_dir)]
-            lego_labels = [1] * len(lego_imgs)
-
-            # Load non-Lego test images
-            non_lego_imgs = [img_to_array(load_img(os.path.join(self.non_lego_test_dir, img), target_size=(64, 64), 
-                                                color_mode='grayscale')) for img in os.listdir(self.non_lego_test_dir)]
-            non_lego_labels = [0] * len(non_lego_imgs)
-
-            # Combine data and labels and convert to numpy arrays
-            self.X_test = np.array(lego_imgs + non_lego_imgs)
-            self.y_test = np.array(lego_labels + non_lego_labels)
+        # Load Lego model images
+        lego_model_imgs = [img_to_array(load_img(os.path.join(self.lego_model_dir, img), target_size=(64, 64), color_mode='grayscale')) 
+                           for img in os.listdir(self.lego_model_dir)]
+        lego_model_labels = [1] * len(lego_model_imgs)
+        
+        # Load Lego images
+        lego_real_imgs = [img_to_array(load_img(os.path.join(self.lego_image_dir, img), target_size=(64, 64), color_mode='grayscale')) 
+                          for img in os.listdir(self.lego_image_dir)]
+        
+        # Augment lego real images
+        lego_real_imgs = self.preprocess_data(np.array(lego_real_imgs))
+        lego_real_labels = [1] * len(lego_real_imgs)
+        
+        # Put all Lego images together
+        lego_imgs = lego_model_imgs + list(lego_real_imgs)
+        lego_labels = lego_model_labels + lego_real_labels
         
 
-    def preprocess_data(self):
+        # Load non-Lego images
+        non_lego_imgs = [img_to_array(load_img(os.path.join(self.non_lego_dir, img), target_size=(64, 64), color_mode='grayscale')) 
+                         for img in os.listdir(self.non_lego_dir)]
+        non_lego_labels = [0] * len(non_lego_imgs)
+        
+        
+        # Combine Lego and non-Lego images
+        X = np.array(lego_imgs + non_lego_imgs)
+        y = np.array(lego_labels + non_lego_labels)
+        
+        # Shuffle the data
+        X, y = self.shuffle_data(X, y)
+        
+        # Split the data into training and testing sets
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.2)
+        
+
+    def preprocess_data(self, X_train):
         datagen = tf.keras.preprocessing.image.ImageDataGenerator(
             rotation_range=20,     # randomly rotate images in the range (degrees, 0 to 180)
             zoom_range = 0.1,      # Randomly zoom image 
@@ -92,10 +74,18 @@ class LegoClassifier:
             horizontal_flip=True,  # randomly flip images horizontally
             vertical_flip=True)   # you can also flip images vertically
 
-        # fit parameters from data
-        datagen.fit(self.X_train)
+        # Fit parameters from data
+        datagen.fit(X_train)
+        
+        # Create a Python generator that yields augmented images
+        generator = datagen.flow(X_train, batch_size=X_train.shape[0], shuffle=False)
 
-    def train_model(self, epochs = 10, batch_size = 32):
+        # Generate and return the augmented images
+        X_train_augmented = next(generator)
+
+        return X_train_augmented
+
+    def train_model(self, epochs = 5, batch_size = 32):
         self.model.fit(self.X_train, self.y_train, epochs=epochs, batch_size=batch_size)
 
     # Think about activation functions
@@ -103,7 +93,8 @@ class LegoClassifier:
 
     def create_model_helper(self, n_layers):
         model = Sequential()
-        model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(64, 64, 1)))
+        model.add(Input(shape=(64, 64, 1)))
+        model.add(Conv2D(32, (3, 3), activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         for i in range(n_layers):
             model.add(Conv2D(64, (3, 3), activation='relu'))
@@ -113,26 +104,16 @@ class LegoClassifier:
         model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
         return model    
     
-    def create_model(self):
+    def create_model(self, epochs = 5, batch_size = 32):
         def model_fn(n_layers=1):
             return self.create_model_helper(n_layers)
         
-        self.model = KerasClassifier(build_fn=model_fn, n_layers = 1, epochs=10, batch_size=32)
+        self.model = KerasClassifier(model=model_fn, n_layers = 1, epochs=epochs, batch_size=batch_size)
         param_grid = {'n_layers': [1, 2, 3, 4, 5]}
         
-        # Combine the training and testing data
-        X_combined = np.concatenate((self.X_train, self.X_test), axis=0)
-        y_combined = np.concatenate((self.y_train, self.y_test), axis=0)
-
-        # Create a list where the test data indices are marked with -1 and the rest are 0
-        test_fold = [-1 if i < len(self.X_train) else 0 for i in range(len(X_combined))]
-
-        # Use the list to create a PredefinedSplit
-        ps = PredefinedSplit(test_fold)
-        
         # Perform grid search
-        grid = GridSearchCV(estimator=self.model, param_grid=param_grid, cv=ps)
-        grid_result = grid.fit(X_combined, y_combined)
+        grid = GridSearchCV(estimator=self.model, param_grid=param_grid, cv=3, verbose=2)
+        grid_result = grid.fit(self.X_train, self.y_train)
 
         # Set classifier.model to the best model found by GridSearchCV
         self.model = grid.best_estimator_.model
@@ -152,7 +133,7 @@ class LegoClassifier:
         loss, accuracy = self.model.evaluate(self.X_test, self.y_test)
         print(f"Loss: {loss}, Accuracy: {accuracy}")
         
-    def predict(self, img_path):
+    def predict_image(self, img_path):
         # Load the image in grayscale mode, resize it to 64x64, and convert it to an array
         img = img_to_array(load_img(img_path, target_size=(64, 64), color_mode='grayscale'))
 
@@ -163,26 +144,43 @@ class LegoClassifier:
         prob = self.model.predict(img)
         label = [1 if prob >= 0.5 else 0 for p in prob[0]]
         return label
+    
+    def predict_image_array(self, dir_path):
+        # Load the images from the directory in grayscale mode, resize it to 64x64, and convert it to an array
+        imgs = [img_to_array(load_img(os.path.join(dir_path, img), target_size=(64, 64), color_mode='grayscale'))
+                for img in os.listdir(dir_path)]
+        
+        # Expand the dimensions to match the input shape of the model
+        imgs = np.array(imgs)
+        imgs = np.expand_dims(imgs, axis=3)
+        
+        # Predict the class of the images
+        probs = self.model.predict(imgs)
+        labels = [1 if prob >= 0.5 else 0 for prob in probs]
+        return labels
         
 
 if __name__ == "__main__":
     
-    classifier = LegoClassifier("data/positive_train/", "data/negative_train/", "data/positive_test/", "data/negative_test/")
+    classifier = LegoClassifier("data/3d_model_lego_images/", "data/physical_lego_images/", "data/non_lego_images/")
     
     # Create or load in model
     # if not os.path.exists("models"):
+    # Check if the lego_classifer.h5 file exists
+    if not os.path.exists("models/lego_classifier.keras"):
+        os.makedirs("models", exist_ok=True)
         
-    print("No model found. Training new model.")
-    classifier.load_data()
-    classifier.preprocess_data()
-    
-    classifier.create_model()
-    
-    classifier.train_model()
-    
-    #os.mkdir("models")
+        print("No model found. Training new model.")
+        classifier.load_data()
+        
+        classifier.create_model()
+        
+        classifier.train_model()
+        
 
-    #classifier.model.model.save("models/lego_classifier.h5")
+        # Save the model
+        tf.keras.models.save_model(classifier.model, 'models/lego_classifier.keras')
+
         
     # else:
     #     print("Model already exists. Skipping training.")
@@ -192,9 +190,9 @@ if __name__ == "__main__":
     classifier.evaluate_model()
     
     # Test prediction
-    path = "data/positive_test/IMG_9082.jpg"
+    path = "data/old_images/plswork.jpg"
     print("Prediction for: ", path)
-    print(classifier.predict(path))
+    print(classifier.predict_image(path))
 
     
         
