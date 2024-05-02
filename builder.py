@@ -126,7 +126,13 @@ class LegoClassifier:
         
         
     def load_pretrained_model(self, model_path):
-        self.model = load_model(model_path)
+        # Print message
+        print("Model already exists. Loading in from disc.")
+        
+        # Load the model
+        classifier.model = tf.keras.models.load_model(model_path)
+        
+        # Compile the model
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
         
     def evaluate_model(self):
@@ -143,6 +149,8 @@ class LegoClassifier:
         # Predict the class of the image
         prob = self.model.predict(img)
         label = [1 if prob >= 0.5 else 0 for p in prob[0]]
+        
+        print("Preditciton for " + img_path + ": " + str(label))
         return label
     
     def predict_image_array(self, dir_path):
@@ -158,6 +166,28 @@ class LegoClassifier:
         probs = self.model.predict(imgs)
         labels = [1 if prob >= 0.5 else 0 for prob in probs]
         return labels
+    
+    def setup_model(self):
+        # Print message
+        print("No model found. Setting up new model")
+        
+        # Load the data
+        self.load_data()
+        
+        # Create the model
+        self.create_model()
+        
+        # Train the model
+        self.train_model()
+        
+        # Evaluate the model
+        self.evaluate_model()
+        
+        # Create the directory
+        os.makedirs("models", exist_ok=True)
+        
+        # Save the model
+        tf.keras.models.save_model(self.model, 'models/lego_classifier.keras')
         
 
 if __name__ == "__main__":
@@ -165,34 +195,84 @@ if __name__ == "__main__":
     classifier = LegoClassifier("data/3d_model_lego_images/", "data/physical_lego_images/", "data/non_lego_images/")
     
     # Create or load in model
-    # if not os.path.exists("models"):
-    # Check if the lego_classifer.h5 file exists
+    # Check if the lego_classifer file exists
     if not os.path.exists("models/lego_classifier.keras"):
-        os.makedirs("models", exist_ok=True)
-        
-        print("No model found. Training new model.")
-        classifier.load_data()
-        
-        classifier.create_model()
-        
-        classifier.train_model()
-        
+        classifier.setup_model()
 
-        # Save the model
-        tf.keras.models.save_model(classifier.model, 'models/lego_classifier.keras')
-
+    else:
+        classifier.load_pretrained_model("models/lego_classifier.keras")
         
-    # else:
-    #     print("Model already exists. Skipping training.")
-    #     classifier.load_pretrained_model("models/lego_classifier.h5")
-        
-    # Evaluate model
-    classifier.evaluate_model()
     
     # Test prediction
-    path = "data/old_images/plswork.jpg"
-    print("Prediction for: ", path)
-    print(classifier.predict_image(path))
+    # path = "data/old_images/plswork.jpg"
+    # print(classifier.predict_image(path))
+    
+    # Load in the icon for detected images
+    icon = cv2.imread("data/old_images/detected_icon.jpg")
+    
+    # Open video capture
+    video = cv2.VideoCapture(1)
+    
+    # Loop until the end of the video
+    while(video.isOpened()):
+        # Read the frame
+        frame = video.read()[1]
+        
+        original_image = frame
+        
+        # Convert the frame to grayscale
+        if len(frame.shape) == 3 and frame.shape[2] == 3:
+            # Convert the frame to grayscale
+            image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            print(f"Unexpected number of channels in frame: {frame.shape}")
+            break
+        
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Resize the image to 64x64
+        image = cv2.resize(image, (64, 64))
+        
+        # Expand the dimensions to match the input shape of the model
+        image = np.expand_dims(image, axis=0)
+        
+        # Predict the class of the image
+        prob = classifier.model.predict(image)
+        
+        # Get the label
+        label = [1 if prob >= 0.5 else 0 for p in prob[0]]
+        
+        # If the prediction is 1, then overlay the icon at the top left corner
+        if label == 1:
+            print("Detected Lego in loop")
+            original_image[0:icon.shape[0], 0:icon.shape[1]] = icon
+            
+        print(label)
+            
+        
+        # # Convert the image to color
+        # # Check the number of dimensions and channels in the image
+        # if len(image.shape) == 3 and image.shape[0] == 1:
+        #     # Remove the extra dimension
+        #     image = np.squeeze(image, axis=0)
+        #     # Convert the image to BGR
+        #     image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        # else:
+        #     print(f"Unexpected number of channels in image: {image.shape}")
+        #     break
+        
+        # image = cv2.resize(image, (800, 600))
+        
+        # Display the frame
+        cv2.imshow('Builder', original_image)
+        
+        # Define q
+        if cv2.waitKey(15) & 0xFF == ord('q'):
+            break
+    
+    # Shut down video stream
+    video.release()
+    cv2.destroyAllWindows()
 
     
         
