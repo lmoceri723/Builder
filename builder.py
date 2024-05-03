@@ -208,10 +208,16 @@ if __name__ == "__main__":
     # print(classifier.predict_image(path))
     
     # Load in the icon for detected images
-    icon = cv2.imread("data/old_images/detected_icon.jpg")
+    icon = cv2.imread("data/old_images/icon.png")
+
+    # Calculate the new dimensions of the image
+    new_dimensions = (icon.shape[1] // 8, icon.shape[0] // 8)
+
+    # Resize the image
+    icon = cv2.resize(icon, new_dimensions, interpolation = cv2.INTER_AREA)
     
     # Open video capture
-    video = cv2.VideoCapture(1)
+    video = cv2.VideoCapture(0)
     
     # Loop until the end of the video
     while(video.isOpened()):
@@ -243,8 +249,7 @@ if __name__ == "__main__":
         label = [1 if prob >= 0.5 else 0 for p in prob[0]]
         
         # If the prediction is 1, then overlay the icon at the top left corner
-        if label == 1:
-            print("Detected Lego in loop")
+        if label == [1]:
             original_image[0:icon.shape[0], 0:icon.shape[1]] = icon
             
         print(label)
