@@ -12,6 +12,22 @@ from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split, PredefinedSplit
 from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV
+from sklearn.cluster import KMeans
+
+color_dict = {
+    "#C91A09": "red",  
+    "#FE8A18": "orange", 
+    "#F2CD37": "yellow",  
+    "#237841": "green", 
+    "#0055BF": "blue",  
+    "#81007B": "purple",  
+    "#FC97AC": "pink",  
+    "#A0A5A9": "light_bluish_gray",  
+    "#6C6E68": "dark_bluish_gray",  
+    "#05131D": "black",  
+    "#FFFFFF": "white",  
+    "#582A12": "brown"  
+}
 
 
 class LegoClassifier:
@@ -254,19 +270,29 @@ if __name__ == "__main__":
             
         print(label)
             
+        orig_img_copy = original_image.copy()
         
-        # # Convert the image to color
-        # # Check the number of dimensions and channels in the image
-        # if len(image.shape) == 3 and image.shape[0] == 1:
-        #     # Remove the extra dimension
-        #     image = np.squeeze(image, axis=0)
-        #     # Convert the image to BGR
-        #     image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-        # else:
-        #     print(f"Unexpected number of channels in image: {image.shape}")
-        #     break
+        # Perform color quantization
+        pixels = np.float32(original_image.reshape(-1, 3))
+        kmeans = KMeans(n_clusters=2).fit(pixels)
+        pixels = np.float32(kmeans.cluster_centers_[kmeans.labels_])
+        quantized_image = pixels.reshape(original_image.shape)
+
+        # Convert the quantized image to 8-bit unsigned integer format
+        quantized_image = np.uint8(quantized_image)
+
+        # Count the occurrences of each color
+        colors, counts = np.unique(quantized_image.reshape(-1, 3), axis=0, return_counts=True)
+
+        # Find the second most common color
+        second_most_common_color = colors[counts.argsort()[-2]]
+
+        # Find the closest match in the dictionary
+        closest_color = min(color_dict.keys(), key=lambda color: np.linalg.norm(np.array(color) - second_most_common_color))
+
+        print("Second most common color:", second_most_common_color)
+        print("Closest match in the dictionary:", color_dict[closest_color])
         
-        # image = cv2.resize(image, (800, 600))
         
         # Display the frame
         cv2.imshow('Builder', original_image)
