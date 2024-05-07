@@ -37,6 +37,7 @@ class LegoClassifier:
         self.non_lego_dir = non_lego_dir
         
         self.model = None
+        self.kmeans = None
         self.X_train, y_train = None, None
         self.X_test, y_test = None, None
         
@@ -218,6 +219,7 @@ if __name__ == "__main__":
     else:
         classifier.load_pretrained_model("models/lego_classifier.keras")
         
+    classifier.kmeans = KMeans(n_clusters=2)
     
     # Test prediction
     # path = "data/old_images/plswork.jpg"
@@ -272,11 +274,13 @@ if __name__ == "__main__":
             
         orig_img_copy = original_image.copy()
         
+        orig_img_copy = cv2.cvtColor(orig_img_copy, cv2.COLOR_BGR2RGB)
+        
         # Perform color quantization
-        pixels = np.float32(original_image.reshape(-1, 3))
-        kmeans = KMeans(n_clusters=2).fit(pixels)
-        pixels = np.float32(kmeans.cluster_centers_[kmeans.labels_])
-        quantized_image = pixels.reshape(original_image.shape)
+        pixels = np.float32(orig_img_copy.reshape(-1, 3))
+        classifier.kmeans.fit(pixels)
+        pixels = np.float32(classifier.kmeans.cluster_centers_[classifier.kmeans.labels_])
+        quantized_image = pixels.reshape(orig_img_copy.shape)
 
         # Convert the quantized image to 8-bit unsigned integer format
         quantized_image = np.uint8(quantized_image)
@@ -288,7 +292,10 @@ if __name__ == "__main__":
         second_most_common_color = colors[counts.argsort()[-2]]
 
         # Find the closest match in the dictionary
-        closest_color = min(color_dict.keys(), key=lambda color: np.linalg.norm(np.array(color) - second_most_common_color))
+        def hex_to_rgb(hex_color):
+            return tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+
+        closest_color = min(color_dict.keys(), key=lambda color: np.linalg.norm(np.array(hex_to_rgb(color)) - second_most_common_color))
 
         print("Second most common color:", second_most_common_color)
         print("Closest match in the dictionary:", color_dict[closest_color])
