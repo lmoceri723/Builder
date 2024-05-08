@@ -13,8 +13,8 @@ while True:
     # Open the default camera
     cap = cv2.VideoCapture(0)
     
+    # Create a directory for the color
     os.makedirs(f'data/final_train_imgs/{color}', exist_ok=True)
-    
 
     # Initialize frame count
     count = 0
