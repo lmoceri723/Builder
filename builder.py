@@ -14,6 +14,8 @@ from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.cluster import KMeans
 
+target_size = (512, 512)
+
 color_dict = {
     "#C91A09": "red",  
     "#FE8A18": "orange", 
@@ -31,10 +33,8 @@ color_dict = {
 
 
 class LegoClassifier:
-    def __init__(self, lego_model_dir, lego_image_dir, non_lego_dir):
-        self.lego_model_dir = lego_model_dir 
-        self.lego_image_dir = lego_image_dir
-        self.non_lego_dir = non_lego_dir
+    def __init__(self, image_dir):
+        self.image_dir = image_dir 
         
         self.model = None
         self.kmeans = None
@@ -47,29 +47,32 @@ class LegoClassifier:
 
     def load_data(self):
         
-        # Load Lego model images
-        lego_model_imgs = [img_to_array(load_img(os.path.join(self.lego_model_dir, img), target_size=(64, 64), color_mode='grayscale')) 
-                           for img in os.listdir(self.lego_model_dir)]
-        lego_model_labels = [1] * len(lego_model_imgs)
+        lego_imgs = []
+        lego_labels = []
         
-        # Load Lego images
-        lego_real_imgs = [img_to_array(load_img(os.path.join(self.lego_image_dir, img), target_size=(64, 64), color_mode='grayscale')) 
-                          for img in os.listdir(self.lego_image_dir)]
+        # Load in the Lego images from each subdirectory
+        for subdir in os.listdir(self.image_dir):
+            for img in os.listdir(os.path.join(self.image_dir, subdir)):
+                img_path = os.path.join(self.image_dir, subdir, img)
+                lego_imgs.append(img_to_array(load_img(img_path, target_size=target_size, color_mode='grayscale')))
+                lego_labels.append(1)
+                
+        non_lego_imgs = []
+        non_lego_labels = []
         
-        # Augment lego real images
-        lego_real_imgs = self.preprocess_data(np.array(lego_real_imgs))
-        lego_real_labels = [1] * len(lego_real_imgs)
+        empty_dir = os.path.join(self.image_dir, "empty/")
+        hand_dir = os.path.join(self.image_dir, "hand/")
         
-        # Put all Lego images together
-        lego_imgs = lego_model_imgs + list(lego_real_imgs)
-        lego_labels = lego_model_labels + lego_real_labels
-        
-
-        # Load non-Lego images
-        non_lego_imgs = [img_to_array(load_img(os.path.join(self.non_lego_dir, img), target_size=(64, 64), color_mode='grayscale')) 
-                         for img in os.listdir(self.non_lego_dir)]
-        non_lego_labels = [0] * len(non_lego_imgs)
-        
+        # Load in the non-Lego images, they are not in subdirectories
+        for img in os.listdir(empty_dir):
+            img_path = os.path.join(empty_dir, img)
+            non_lego_imgs.append(img_to_array(load_img(img_path, target_size=target_size, color_mode='grayscale')))
+            non_lego_labels.append(0)
+            
+        for img in os.listdir(hand_dir):
+            img_path = os.path.join(hand_dir, img)
+            non_lego_imgs.append(img_to_array(load_img(img_path, target_size=target_size, color_mode='grayscale')))
+            non_lego_labels.append(0)
         
         # Combine Lego and non-Lego images
         X = np.array(lego_imgs + non_lego_imgs)
@@ -80,37 +83,13 @@ class LegoClassifier:
         
         # Split the data into training and testing sets
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=0.2)
-        
-
-    def preprocess_data(self, X_train):
-        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-            rotation_range=20,     # randomly rotate images in the range (degrees, 0 to 180)
-            zoom_range = 0.1,      # Randomly zoom image 
-            width_shift_range=0.1, # randomly shift images horizontally (fraction of total width)
-            height_shift_range=0.1,# randomly shift images vertically (fraction of total height)
-            horizontal_flip=True,  # randomly flip images horizontally
-            vertical_flip=True)   # you can also flip images vertically
-
-        # Fit parameters from data
-        datagen.fit(X_train)
-        
-        # Create a Python generator that yields augmented images
-        generator = datagen.flow(X_train, batch_size=X_train.shape[0], shuffle=False)
-
-        # Generate and return the augmented images
-        X_train_augmented = next(generator)
-
-        return X_train_augmented
 
     def train_model(self, epochs = 5, batch_size = 32):
         self.model.fit(self.X_train, self.y_train, epochs=epochs, batch_size=batch_size)
 
-    # Think about activation functions
-
-
     def create_model_helper(self, n_layers):
         model = Sequential()
-        model.add(Input(shape=(64, 64, 1)))
+        model.add(Input(shape=(512, 512, 1)))
         model.add(Conv2D(32, (3, 3), activation='relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         for i in range(n_layers):
@@ -157,8 +136,8 @@ class LegoClassifier:
         print(f"Loss: {loss}, Accuracy: {accuracy}")
         
     def predict_image(self, img_path):
-        # Load the image in grayscale mode, resize it to 64x64, and convert it to an array
-        img = img_to_array(load_img(img_path, target_size=(64, 64), color_mode='grayscale'))
+        # Load the image in grayscale mode, resize it , and convert it to an array
+        img = img_to_array(load_img(img_path, target_size=target_size, color_mode='grayscale'))
 
         # Expand the dimensions to match the input shape of the model
         img = np.expand_dims(img, axis=0)
@@ -171,8 +150,8 @@ class LegoClassifier:
         return label
     
     def predict_image_array(self, dir_path):
-        # Load the images from the directory in grayscale mode, resize it to 64x64, and convert it to an array
-        imgs = [img_to_array(load_img(os.path.join(dir_path, img), target_size=(64, 64), color_mode='grayscale'))
+        # Load the images from the directory in grayscale mode, resize it, and convert it to an array
+        imgs = [img_to_array(load_img(os.path.join(dir_path, img), target_size=target_size, color_mode='grayscale'))
                 for img in os.listdir(dir_path)]
         
         # Expand the dimensions to match the input shape of the model
@@ -209,7 +188,7 @@ class LegoClassifier:
 
 if __name__ == "__main__":
     
-    classifier = LegoClassifier("data/3d_model_lego_images/", "data/physical_lego_images/", "data/non_lego_images/")
+    classifier = LegoClassifier("data/final_train_imgs/")
     
     # Create or load in model
     # Check if the lego_classifer file exists
@@ -254,8 +233,8 @@ if __name__ == "__main__":
         
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Resize the image to 64x64
-        image = cv2.resize(image, (64, 64))
+        # Resize the image
+        image = cv2.resize(image, target_size)
         
         # Expand the dimensions to match the input shape of the model
         image = np.expand_dims(image, axis=0)

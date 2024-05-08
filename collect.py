@@ -1,4 +1,5 @@
 import cv2
+import os
 
 # Run the program multiple times
 while True:
@@ -11,6 +12,9 @@ while True:
 
     # Open the default camera
     cap = cv2.VideoCapture(0)
+    
+    os.makedirs(f'data/final_train_imgs/{color}', exist_ok=True)
+    
 
     # Initialize frame count
     count = 0
@@ -24,7 +28,7 @@ while True:
             break
 
         # Save the resulting frame
-        cv2.imwrite(f'data/final_train_imgs/{color}_{count}.jpg', frame)
+        cv2.imwrite(f'data/final_train_imgs/{color}/{color}_{count}.jpg', frame)
 
         # Display the resulting frame
         cv2.imshow('Frame', frame)
@@ -33,7 +37,7 @@ while True:
         count += 1
 
         # Break the loop after capturing 200 frames
-        if count >= 200:
+        if count >= 400:
             break
 
         # Break the loop on 'q' key press
