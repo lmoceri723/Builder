@@ -7,9 +7,16 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python.keras.models import Sequential, load_model
-from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
-from keras_preprocessing.image import load_img, img_to_array
+# New imports
+# from tensorflow.python.keras.models import Sequential, load_model
+# from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
+#from keras_preprocessing.image import load_img, img_to_array
+
+# Old imports
+from keras.models import Sequential, load_model
+from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
+from keras.preprocessing.image import load_img, img_to_array
+
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split, PredefinedSplit
 from scikeras.wrappers import KerasClassifier

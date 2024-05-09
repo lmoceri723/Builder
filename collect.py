@@ -38,7 +38,7 @@ while True:
     count += 1
 
     # Break the loop after capturing 200 frames
-    if count >= 400:
+    if count >= 200:
         break
 
     # Break the loop on 'q' key press
