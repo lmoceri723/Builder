@@ -37,7 +37,7 @@ class LegoClassifier:
         
         # Parameters for the images
         # Defines the size of images passed into the model
-        target_dim = 128
+        target_dim = 512
         self.target_size = (target_dim, target_dim)
 
         # Defines the percent of data to load in for training
@@ -60,9 +60,6 @@ class LegoClassifier:
         self.detected_icon = cv2.imread("data/old_images/icon.png")
         self.detected_icon = cv2.resize(self.detected_icon, (self.detected_icon.shape[1] // 8, 
                                                              self.detected_icon.shape[0] // 8), interpolation = cv2.INTER_AREA)
-        
-        # KMeans object for color quantization
-        self.kmeans = KMeans(n_clusters=2)
         
         # Color dictionary
         # Sampled from the Lego bricks using MS Paint
@@ -96,10 +93,17 @@ class LegoClassifier:
             if subdir == "empty" or subdir == "hand":
                 continue
             
+            count = 0
+            num_imgs = 200 * self.percent_used
+            
             for img in os.listdir(os.path.join(self.image_dir, subdir)):
                 img_path = os.path.join(self.image_dir, subdir, img)
                 lego_imgs.append(img_to_array(load_img(img_path, target_size=self.target_size, color_mode=self.color_mode)))
                 lego_labels.append(1)
+                
+                if count == num_imgs:
+                    break
+                count += 1
            
         # Load in the non-Lego images from both subdirectories     
         non_lego_imgs = []
@@ -109,15 +113,28 @@ class LegoClassifier:
         hand_dir = os.path.join(self.image_dir, "hand/")
         
         # Load in the non-Lego images, they are not in subdirectories
+        count = 0
+        num_imgs = 2000 * self.percent_used
         for img in os.listdir(empty_dir):
+            
             img_path = os.path.join(empty_dir, img)
             non_lego_imgs.append(img_to_array(load_img(img_path, target_size=self.target_size, color_mode=self.color_mode)))
             non_lego_labels.append(0)
             
+            if count == num_imgs:
+                break
+            count += 1
+            
+        count = 0
+        num_imgs = 400 * self.percent_used
         for img in os.listdir(hand_dir):
             img_path = os.path.join(hand_dir, img)
             non_lego_imgs.append(img_to_array(load_img(img_path, target_size=self.target_size, color_mode=self.color_mode)))
             non_lego_labels.append(0)
+            
+            if count == num_imgs:
+                break
+            count += 1
         
         # Combine Lego and non-Lego images
         X = np.array(lego_imgs + non_lego_imgs)
@@ -126,8 +143,8 @@ class LegoClassifier:
         # Shuffle the data
         X, y = self.shuffle_data(X, y)
         
-        test_size = self.percent_used * 0.2
-        train_size = self.percent_used * 0.8
+        test_size = 0.2
+        train_size = 0.8
         # Split the data into training and testing sets
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X, y, test_size=test_size, 
                                                                                 train_size=train_size, random_state=42)
@@ -191,6 +208,9 @@ class LegoClassifier:
                         best_params = (n_layers, epochs, batch_size)
                         best_score = score
                         self.model = model
+
+                        if score > 0.99:
+                            return best_params
 
         # Print the best parameters and the best score
         print(f'Best parameters: {best_params}')
@@ -258,10 +278,10 @@ class LegoClassifier:
         
         # Print the prediction and return it
         if prob >= 0.5:
-            print("LEGO")
+            #print("LEGO")
             return 1
         else:
-            print("none")
+            #print("none")
             return 0
         
     # Written with the help of GitHub Copilot
@@ -290,7 +310,7 @@ class LegoClassifier:
         closest_color = min(color_dict_lab.keys(), 
                             key=lambda color: np.linalg.norm(color_dict_lab[color] - pixel_lab))
 
-        print("Closest match in the dictionary:", self.color_dict[closest_color])
+        #print("Closest match in the dictionary:", self.color_dict[closest_color])
         
         # Return the color's name as a string
         return self.color_dict[closest_color]
