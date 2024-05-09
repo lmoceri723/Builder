@@ -6,14 +6,16 @@ import os
 import time
 import numpy as np
 import tensorflow as tf
-from keras.models import Sequential, load_model
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
-from keras.preprocessing.image import load_img, img_to_array
+
+from tensorflow.python.keras.models import Sequential, load_model
+from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, Input
+from keras_preprocessing.image import load_img, img_to_array
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split, PredefinedSplit
 from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.cluster import KMeans
+from skimage import color
 
 class LegoClassifier:
     def __init__(self, image_dir):
@@ -35,9 +37,6 @@ class LegoClassifier:
         # There are 200 images for each color, times 12 colors, = 2400 images for Lego
         # There are 2000 images for the empty plate and another 400 for the plate with a hand above it
         self.percent_used = 0.1
-        
-        # Switch to include light bluish gray, might help with the accuracy
-        self.include_light_bluish_gray = True
 
         # Defines the color mode of the images passed into the model
         self.color_mode = 'rgb'
@@ -59,20 +58,20 @@ class LegoClassifier:
         self.kmeans = KMeans(n_clusters=2)
         
         # Color dictionary
-        # Data taken from https://rebrickable.com/colors
+        # Sampled from the Lego bricks using MS Paint
         self.color_dict = {
-            "#C91A09": "red",  
-            "#FE8A18": "orange", 
-            "#F2CD37": "yellow",  
-            "#237841": "green", 
-            "#0055BF": "blue",  
-            "#81007B": "purple",  
-            "#FC97AC": "pink",  
-            "#A0A5A9": "light_bluish_gray",  
-            "#6C6E68": "dark_bluish_gray",  
-            "#05131D": "black",  
-            "#FFFFFF": "white",  
-            "#582A12": "brown"  
+            "#770A00": "red",  
+            "#9D3500": "orange", 
+            "#9F7204": "yellow",  
+            "#123029": "green", 
+            "#051E60": "blue",  
+            "#16133B": "purple",  
+            "#915B6C": "pink",  
+            "#61595C": "lb_gray",  
+            "#2A272A": "db_gray",  
+            "#050608": "black",  
+            "#9D908A": "white",  
+            "#29120D": "brown"  
         }
         
     # Helper function to shuffle the data
@@ -88,9 +87,6 @@ class LegoClassifier:
         # Load in the Lego images from each subdirectory
         for subdir in os.listdir(self.image_dir):
             if subdir == "empty" or subdir == "hand":
-                continue
-            
-            if not self.include_light_bluish_gray and subdir == "lb_gray":
                 continue
             
             for img in os.listdir(os.path.join(self.image_dir, subdir)):
@@ -272,37 +268,70 @@ class LegoClassifier:
     def find_color(self, frame):
         # Convert the frame to RGB
         frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2RGB)
-        
-        # Perform color quantization
-        pixels = np.float32(frame.reshape(-1, 3))
-        classifier.kmeans.fit(pixels)
-        pixels = np.float32(classifier.kmeans.cluster_centers_[classifier.kmeans.labels_])
-        quantized_image = pixels.reshape(frame.shape)
 
-        # Convert the quantized image to 8-bit unsigned integer format
-        quantized_image = np.uint8(quantized_image)
+        # Get the pixel in the center of the frame
+        pixel = frame[int(frame.shape[0]/2), int(frame.shape[1]/2)]
 
-        # Count the occurrences of each color
-        colors, counts = np.unique(quantized_image.reshape(-1, 3), axis=0, return_counts=True)
+        # Convert the pixel to 8-bit unsigned integer format
+        pixel = np.uint8(pixel)
 
-        # Find the second most common color
-        second_most_common_color = colors[counts.argsort()[-2]]
+        # Convert the pixel to Lab color space
+        pixel_lab = color.rgb2lab([[[pixel / 255]]]).flatten()
+        color_dict_lab = {col: color.rgb2lab([[[np.array(hex_to_rgb(col)) / 255]]]).flatten() for col in self.color_dict.keys()}
 
         # Find the closest match in the dictionary
-        def hex_to_rgb(hex_color):
-            return tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+        closest_color = min(color_dict_lab.keys(), 
+                            key=lambda color: np.linalg.norm(color_dict_lab[color] - pixel_lab))
 
-        closest_color = min(self.color_dict.keys(), 
-                            key=lambda color: np.linalg.norm(np.array(hex_to_rgb(color)) - second_most_common_color))
-
-        print("Second most common color:", second_most_common_color)
         print("Closest match in the dictionary:", self.color_dict[closest_color])
         
+        # Return the color's name as a string
         return self.color_dict[closest_color]
+    
+    def overlay_bricklink(self, frame, col):
+        
+        # Find the path to the corresponding image from its color
+        path = ""
+        if col == None:
+            path = "data/bl_images/logo.png"
+        else:
+            path = f"data/bl_images/{col}.png"
+        
+        if not os.path.isfile(path):
+            print("The image file does not exist.")
+            print(f"Path: {path}")
+            return
+        
+        # Read in the image
+        overlay = cv2.imread(path)
+        
+        # Get the desired height
+        height = frame.shape[0]
+        height = int(height *1.5)
+        
+        # Resize the image to 720*720
+        overlay = cv2.resize(overlay, (height, height), interpolation = cv2.INTER_AREA)
+        
+        # 1.5x the size of the frame
+        frame = cv2.resize(frame, None, fx=1.5, fy=1.5)
+        
+        # Create a new image with additional width for the box
+        frame = np.hstack((frame, overlay))
+        
+        return frame
+        
+        
+
+# Written with the help of GitHub Copilot
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
 
 if __name__ == "__main__":
     
-    classifier = LegoClassifier("data/final_train_imgs/")
+    # Create the LegoClassifier object
+    classifier = LegoClassifier("data/final_train_imgs2/")
     
     # Create or load in model
     # Check if the lego_classifer file exists
@@ -315,23 +344,34 @@ if __name__ == "__main__":
     # Open video capture
     print("Opening video capture.")
     start_time = time.time()
-    video = cv2.VideoCapture(0)
+    video = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     print(f"Video capture opened, time to open video capture: {time.time() - start_time}")
     
     # Loop until the end of the video
     while(video.isOpened()):
         # Read the frame
         frame = video.read()[1]
+        if frame is None or frame.shape[0] == 0 or frame.shape[1] == 0:
+            print("The frame is not valid.")
+            continue
         
         # Get the predicted label
         label = classifier.predict_frame(frame.copy())
+        col = None
         
         # If the prediction is 1, then overlay the icon at the top left corner
         if label == 1:
             frame = classifier.impose_icon(frame)
         
-        # Find the color of the brick in the frame
-        classifier.find_color(frame.copy())
+            # Find the color of the brick in the frame
+            col = classifier.find_color(frame.copy())
+        
+        # Draw a positioning box in the center of the frame
+        cv2.rectangle(frame, (int(frame.shape[1]/2 - 75), int(frame.shape[0]/2 - 75)), 
+                      (int(frame.shape[1]/2 + 75), int(frame.shape[0]/2 + 75)), (0, 0, 0), 2)
+        
+        # Overlay the bricklink data from the color
+        frame = classifier.overlay_bricklink(frame, col)
         
         # Display the frame
         cv2.imshow('Builder', frame)
